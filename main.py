@@ -11,12 +11,40 @@ from nltk.corpus import stopwords
 import pandas as pd
 from sklearn.feature_extraction.text import CountVectorizer
 
+class GlobalDict:
+    
+    def __init__(self):
+        self.global_dict = []
+        self.file_vec_list = []
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self):
+        del self.global_dict
+        del self.file_vec_list
+        
+    def add_word2dict(self, word):
+        self.global_dict.append(word)
+    
+    def add_file_vec(self, vec):
+        self.global_dict.append(vec)
+        
+    def build_dataframe(self):
+        df = pd.DataFrame(columns=self.global_dict)
+        for file_vec in self.file_vec_list:
+            new_df = pd.DataFrame(columns=self.global_dict)
+            for key in file_vec.keys():
+                print(key)
+                
+    
 class Preprocessor:
     
     def __init__(self):
         self.labels = [x for x in os.listdir("data/20_newsgroups")]
         self.path = "data\\20_newsgroups\\"
         self.stop_words = set(stopwords.words('english'))
+        self.global_dict = GlobalDict()
     
     def __enter__(self):
         return self
@@ -57,7 +85,7 @@ class Preprocessor:
                 k += 1
         print("Number of Files"+str(k))
     
-    def remove_stop_words(self, stop_words, content):
+    def remove_stop_words(self, content):
         """
         Function to remove the stop words from the content.
         For example: the,a, an
@@ -84,7 +112,7 @@ class Preprocessor:
             Content that has been filtered out for any stop words
 
         """
-        return " ".join([word for word in str(content).split() if word not in stop_words])
+        return " ".join([word for word in str(content).split() if word not in self.stop_words])
     
     def preprocessing(self, file_path):
         """
@@ -116,21 +144,25 @@ class Preprocessor:
         content = re.sub('[%s]' % re.escape(string.punctuation), ' ', content)
          
         #Remove words and digits like game47,g4me
-        content = re.sub('W*dw*', '', content)
+        #content = re.sub('W*dw*', '', content)
+        
+        #Remove all numbers
+        content = re.sub(r'[0-9]+', '', content)
                 
         #Remove stopwords
-        content = self.remove_stop_words(self.stop_words, content)
+        content = self.remove_stop_words(content)
         
         #Creating the vector for each document
         vec = self.create_doc_vector(content)
-        print(vec)
-        
-        return content
+        #self.global_dict.add_file_vec(vec)
+
+        return content, vec
     
     def create_doc_vector(self, content):
         word_list = [word for word in str(content).split()]
         vec = {}
         for word in word_list:
+            #self.global_dict.add_word2dict(word)
             if word in vec.keys():
                 vec[word] = vec[word] + 1
             else:
@@ -187,17 +219,27 @@ class DocClassifier:
         self.file_per_class = {}
     
     def Classify(self):
-        preprocessor = Preprocessor()
-        k=0
-        for label in self.labels:
-            for file in os.listdir(f"{self.path}\{label}"):
-                file_path = f"{self.path}\{label}\{file}"
-                preprocessor.preprocessing(file_path)
-                k+=1
-                print(f"Document {k} processed for class {label}")
-        print(f"Total Documents processed: {k}")
-        self.count_files()
-        df = pd.DataFrame(self.file_per_class, columns = self.file_per_class.keys(), index=[0])
+        if os.path.exists('processed_data.csv'):
+            df = pd.read_csv('processed_data.csv')
+        else:
+            preprocessor = Preprocessor()
+            k=0
+            df = pd.DataFrame()
+            for label in self.labels:
+                for file in os.listdir(f"{self.path}\{label}"):
+                    file_path = f"{self.path}\{label}\{file}"
+                    content, vec = preprocessor.preprocessing(file_path)
+                    vec['category_class'] = label
+                    new_df = pd.DataFrame(vec, index=[0])
+                    df = pd.concat([df,new_df], axis=0, ignore_index=True)
+                    k+=1
+                    print(f"Document {k} processed for class {label}")
+            print(f"Total Documents processed: {k}")
+            print(df.head())
+            #self.count_files()
+            #df = pd.DataFrame(self.file_per_class, columns = self.file_per_class.keys(), index=[0])
+            df = df.fillna(0)
+            df.to_csv('processed_data.csv')
         print(df)
                                 
     def count_files(self):
