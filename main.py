@@ -8,6 +8,7 @@ import os
 import re
 import string
 from nltk.corpus import stopwords
+import pandas as pd
 from sklearn.feature_extraction.text import CountVectorizer
 
 class Preprocessor:
@@ -119,10 +120,22 @@ class Preprocessor:
                 
         #Remove stopwords
         content = self.remove_stop_words(self.stop_words, content)
-         
+        
+        #Creating the vector for each document
+        vec = self.create_doc_vector(content)
+        print(vec)
+        
         return content
     
-    def prepare_data(self):
+    def create_doc_vector(self, content):
+        word_list = [word for word in str(content).split()]
+        vec = {}
+        for word in word_list:
+            if word in vec.keys():
+                vec[word] = vec[word] + 1
+            else:
+                vec[word] = 1
+        return vec
         """
         Function to pre-process the data mentioned in the files for each 
         class/label to be able to convert the content into frequency vectors
@@ -169,27 +182,33 @@ class DocClassifier:
     def __init__(self):
         self.labels = [x for x in os.listdir("data/20_newsgroups")]
         self.path = "data\\20_newsgroups\\"
-         
-    def create_doc_vector(self, content):
-        pass
+        self.training_data = pd.DataFrame()
+        self.testing_data = pd.DataFrame()
+        self.file_per_class = {}
     
     def Classify(self):
         preprocessor = Preprocessor()
-        
+        k=0
         for label in self.labels:
             for file in os.listdir(f"{self.path}\{label}"):
                 file_path = f"{self.path}\{label}\{file}"
                 preprocessor.preprocessing(file_path)
+                k+=1
+                print(f"Document {k} processed for class {label}")
+        print(f"Total Documents processed: {k}")
+        self.count_files()
+        df = pd.DataFrame(self.file_per_class, columns = self.file_per_class.keys(), index=[0])
+        print(df)
                                 
     def count_files(self):
-        file_per_class = {}
         for label in self.labels:
             file_list = os.listdir(f"{self.path}\{label}")
-            file_per_class[label] = len(file_list)
-        print(file_per_class)
+            self.file_per_class[label] = len(file_list)
+        print(self.file_per_class)
+        
         
 if __name__ == "__main__":
     doc_class = DocClassifier()
     #doc_class.print_filenames()
     #doc_class.prepare_data()
-    doc_class.count_files()
+    doc_class.Classify()
