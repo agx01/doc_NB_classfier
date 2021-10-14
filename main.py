@@ -10,11 +10,20 @@ import string
 from nltk.corpus import stopwords
 from sklearn.feature_extraction.text import CountVectorizer
 
-class DocClassifier:
+class Preprocessor:
     
     def __init__(self):
         self.labels = [x for x in os.listdir("data/20_newsgroups")]
         self.path = "data\\20_newsgroups\\"
+        self.stop_words = set(stopwords.words('english'))
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self):
+        del self.labels
+        del self.path
+        del self.stop_words
     
     def read_file(self, file_path):
         """
@@ -76,6 +85,43 @@ class DocClassifier:
         """
         return " ".join([word for word in str(content).split() if word not in stop_words])
     
+    def preprocessing(self, file_path):
+        """
+        Pre-Process Steps for each file
+            1. Get the content from the file
+            2. Lower the capital letters in the content
+            3. Replace all the punctuations with a space
+            4. Remove all the words with letter/number combination
+            5. Remove all the stop words in the content
+
+        Parameters
+        ----------
+        file_path : String
+            File path for which preprocessing is required
+
+        Returns
+        -------
+        content : String
+            Preprocessed content of the file.
+
+        """
+        #Get content from the file
+        content = self.read_file(file_path)
+        
+        #Lower case the entire content
+        content = content.lower()
+         
+        #Replace the punctuation
+        content = re.sub('[%s]' % re.escape(string.punctuation), ' ', content)
+         
+        #Remove words and digits like game47,g4me
+        content = re.sub('W*dw*', '', content)
+                
+        #Remove stopwords
+        content = self.remove_stop_words(self.stop_words, content)
+         
+        return content
+    
     def prepare_data(self):
         """
         Function to pre-process the data mentioned in the files for each 
@@ -86,7 +132,7 @@ class DocClassifier:
             2. Replace all punctuations with a space
             3. Remove all words with letter/number combo
             4. Remove all the stop words in the content
-
+            
         Returns
         -------
         None.
@@ -117,7 +163,24 @@ class DocClassifier:
                 k += 1
                 print(f"Document {k} preprocessing complete")    
         print("Documents prepared: "+str(k))
+
+class DocClassifier:
+    
+    def __init__(self):
+        self.labels = [x for x in os.listdir("data/20_newsgroups")]
+        self.path = "data\\20_newsgroups\\"
+         
+    def create_doc_vector(self, content):
+        pass
+    
+    def Classify(self):
+        preprocessor = Preprocessor()
         
+        for label in self.labels:
+            for file in os.listdir(f"{self.path}\{label}"):
+                file_path = f"{self.path}\{label}\{file}"
+                preprocessor.preprocessing(file_path)
+                                
     def count_files(self):
         file_per_class = {}
         for label in self.labels:
