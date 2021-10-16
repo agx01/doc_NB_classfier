@@ -18,7 +18,6 @@ class GlobalDict:
         self.words_per_class = {}
         for label in labels:
             self.words_per_class[label] = 0
-        self.prior_list = []
         self.total_words = 0
     
     def __enter__(self):
@@ -44,7 +43,6 @@ class GlobalDict:
     def get_label_wordcount(self, label):
         return self.words_per_class[label]
     
-
 class Document:
     
     def __init__(self, label, file_path, global_dict):
@@ -53,8 +51,11 @@ class Document:
         self.prob_list = {}
         
     def calculate_prob(self, global_dict):
+        #Iterate over each word in the vector for the document
         for word in self.vec.keys():
+            #Calculate probability of each word in a class
             prob = self.vec[word]/global_dict.get_label_wordcount(self.label)
+            self.prob_list.append[word] = prob
     
     def read_file(self, file_path):
         """
@@ -161,16 +162,25 @@ class Document:
         
 class DocClassifier:
     
-    def __init__(self):
+    def __init__(self, train_test_split=0.5):
         self.labels = [x for x in os.listdir("data/20_newsgroups")]
         self.path = "data\\20_newsgroups\\"
         self.doc_list = []
         self.global_dict = GlobalDict(self.labels)
+        self.prior_list = {}
+        self.train_test_split = train_test_split
     
     def fit(self):
         for doc in self.doc_list:
             doc.calculate_prob()
+
     
+    def calculate_prior(self, total_records):
+        for label in self.labels:
+            file_num = len(os.listdir(f"{self.path}\{label}"))
+            prior_label = (file_num*self.train_test_split)/total_records
+            self.prior_list[label] = prior_label
+        
     def Classify(self):
         k=0
         for label in self.labels:
@@ -181,12 +191,26 @@ class DocClassifier:
                 doc = Document(label, file_path, self.global_dict)
                 self.doc_list.append(doc)
                 j += 1
-                if j == int(files_num/2):
+                if j == int(files_num*self.train_test_split):
                     break
                 k+=1
                 print(f"Document {k} processed for class {label}")
+        self.calculate_prior(k)
         print(f"Total Documents processed: {k}")
+        print(f"Priors calculated: {self.prior_list}")
+        
+        print("Calculate probability of each word in every doc")
+        for doc in self.doc_list:
+            doc.calculate_prob(self.global_dict)
     
+    def print_prob_doc(self):
+        i = 1
+        k = len(self.doc_list)
+        for doc in self.doc_list:
+            print(f"Document {i} / {k}")
+            print(f"Document probabilities: {doc.prob_list}")
+            i+=1
+            
     def print_doclist(self):
         i = 1
         k = len(self.doc_list)
