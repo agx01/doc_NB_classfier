@@ -9,13 +9,17 @@ import re
 import string
 from nltk.corpus import stopwords
 import pandas as pd
-from sklearn.feature_extraction.text import CountVectorizer
 
 class GlobalDict:
     
-    def __init__(self):
+    def __init__(self, labels):
         self.global_dict = []
-        self.file_vec_list = []
+        self.stop_words = set(stopwords.words('english'))
+        self.words_per_class = {}
+        for label in labels:
+            self.words_per_class[label] = 0
+        self.prior_list = []
+        self.total_words = 0
     
     def __enter__(self):
         return self
@@ -24,38 +28,33 @@ class GlobalDict:
         del self.global_dict
         del self.file_vec_list
         
-    def add_word2dict(self, word):
-        self.global_dict.append(word)
+    def add_word2dict(self, word, label):
+        if word not in self.global_dict:
+            self.global_dict.append(word)
+        self.increase_words_per_class(label)
     
-    def add_file_vec(self, vec):
-        self.global_dict.append(vec)
+    def increase_words_per_class(self, label):
+            self.words_per_class[label] += 1
+            #increase the total words list
+            self.total_words += 1
     
     def get_file_vec(self):
-        return self.file_vec_list
+        return self.file_vec_list   
+
+    def get_label_wordcount(self, label):
+        return self.words_per_class[label]
     
-    def build_dataframe(self):
-        df = pd.DataFrame(columns=self.global_dict)
-        for file_vec in self.file_vec_list:
-            new_df = pd.DataFrame(columns=self.global_dict)
-            for key in file_vec.keys():
-                print(key)
-                
+
+class Document:
     
-class Preprocessor:
-    
-    def __init__(self):
-        self.labels = [x for x in os.listdir("data/20_newsgroups")]
-        self.path = "data\\20_newsgroups\\"
-        self.stop_words = set(stopwords.words('english'))
-        self.global_dict = GlobalDict()
-    
-    def __enter__(self):
-        return self
-    
-    def __exit__(self):
-        del self.labels
-        del self.path
-        del self.stop_words
+    def __init__(self, label, file_path, global_dict):
+        self.label = label
+        self.vec, self.doc_len = self.preprocessing(file_path, global_dict)
+        self.prob_list = {}
+        
+    def calculate_prob(self, global_dict):
+        for word in self.vec.keys():
+            prob = self.vec[word]/global_dict.get_label_wordcount(self.label)
     
     def read_file(self, file_path):
         """
@@ -76,19 +75,8 @@ class Preprocessor:
         with open(file_path, 'r') as f:
             content = f.read()
         return content
-        
-    def print_filenames(self):
-        k=0
-        #iterate through the sub directories
-        for label in self.labels:
-            #Iterate through the files in sub directories
-            for file in os.listdir(f"{self.path}\{label}"):
-                file_path = f"{self.path}\{label}\{file}"
-                self.read_file(file_path)
-                k += 1
-        print("Number of Files"+str(k))
     
-    def remove_stop_words(self, content):
+    def remove_stop_words(self, content, stop_words):
         """
         Function to remove the stop words from the content.
         For example: the,a, an
@@ -115,9 +103,9 @@ class Preprocessor:
             Content that has been filtered out for any stop words
 
         """
-        return " ".join([word for word in str(content).split() if word not in self.stop_words])
+        return " ".join([word for word in str(content).split() if word not in stop_words])
     
-    def preprocessing(self, file_path):
+    def preprocessing(self, file_path, global_dict):
         """
         Pre-Process Steps for each file
             1. Get the content from the file
@@ -145,107 +133,69 @@ class Preprocessor:
          
         #Replace the punctuation
         content = re.sub('[%s]' % re.escape(string.punctuation), ' ', content)
-         
-        #Remove words and digits like game47,g4me
-        #content = re.sub('W*dw*', '', content)
         
         #Remove all numbers
         content = re.sub(r'[0-9]+', '', content)
                 
         #Remove stopwords
-        content = self.remove_stop_words(content)
+        content = self.remove_stop_words(content, global_dict.stop_words)
         
         #Creating the vector for each document
-        vec = self.create_doc_vector(content)
-        #self.global_dict.add_file_vec(vec)
-
-        return content, vec
+        vec = self.create_doc_vector(content, global_dict)
+        
+        doc_length = len(vec)
+        
+        return vec, doc_length
     
-    def create_doc_vector(self, content):
+    def create_doc_vector(self, content, global_dict):
         word_list = [word for word in str(content).split()]
         vec = {}
         for word in word_list:
-            #self.global_dict.add_word2dict(word)
+            global_dict.add_word2dict(word, self.label)
             if word in vec.keys():
                 vec[word] = vec[word] + 1
             else:
                 vec[word] = 1
         return vec
-        """
-        Function to pre-process the data mentioned in the files for each 
-        class/label to be able to convert the content into frequency vectors
-        
-        Pre-Process Steps for each file:
-            1. Lower any capital letters
-            2. Replace all punctuations with a space
-            3. Remove all words with letter/number combo
-            4. Remove all the stop words in the content
-            
-        Returns
-        -------
-        None.
 
-        """
-        #Initializing the stopwords
-        stop_words = set(stopwords.words('english'))
         
-        k =0
-        #iterate through the sub directories
-        for label in self.labels:
-            #Iterate through the files in sub directories
-            for file in os.listdir(f"{self.path}\{label}"):
-                file_path = f"{self.path}\{label}\{file}"
-                content = self.read_file(file_path)
-                
-                #Lower case the entire content
-                content = content.lower()
-                
-                #Replace the punctuation
-                content = re.sub('[%s]' % re.escape(string.punctuation), ' ', content)
-                
-                #Remove words and digits like game47,g4me
-                content = re.sub('W*dw*', '', content)
-                
-                #Remove stopwords
-                content = self.remove_stop_words(stop_words, content)                  
-                k += 1
-                print(f"Document {k} preprocessing complete")    
-        print("Documents prepared: "+str(k))
-
 class DocClassifier:
     
     def __init__(self):
         self.labels = [x for x in os.listdir("data/20_newsgroups")]
         self.path = "data\\20_newsgroups\\"
-        self.training_data = pd.DataFrame()
-        self.testing_data = pd.DataFrame()
-        self.file_per_class = {}
+        self.doc_list = []
+        self.global_dict = GlobalDict(self.labels)
+    
+    def fit(self):
+        for doc in self.doc_list:
+            doc.calculate_prob()
     
     def Classify(self):
-        if os.path.exists('processed_data.csv'):
-            df = pd.read_csv('processed_data.csv')
-        else:
-            k=0
-            preprocessor = Preprocessor()
-            df = pd.DataFrame()
-            for label in self.labels:
-                for file in os.listdir(f"{self.path}\{label}"):
-                    file_path = f"{self.path}\{label}\{file}"
-                    content, vec = preprocessor.preprocessing(file_path)
-                    vec['category_class'] = label
-                    new_df = pd.DataFrame(vec, index=[0])
-                    preprocessor.global_dict.add_file_vec(vec)
-                    #df = pd.concat([df,new_df], axis=0, ignore_index=True)
-                    k+=1
-                    print(f"Document {k} processed for class {label}")
-            print(f"Total Documents processed: {k}")
-            print(preprocessor.global_dict.get_file_vec())
-            #print(df.head())
-            #self.count_files()
-            #df = pd.DataFrame(self.file_per_class, columns = self.file_per_class.keys(), index=[0])
-            #df = df.fillna(0)
-            #df.to_csv('processed_data.csv')
-        print(df)
+        k=0
+        for label in self.labels:
+            j = 0
+            files_num = len(os.listdir(f"{self.path}\{label}"))
+            for file in os.listdir(f"{self.path}\{label}"):
+                file_path = f"{self.path}\{label}\{file}"
+                doc = Document(label, file_path, self.global_dict)
+                self.doc_list.append(doc)
+                j += 1
+                if j == int(files_num/2):
+                    break
+                k+=1
+                print(f"Document {k} processed for class {label}")
+        print(f"Total Documents processed: {k}")
+    
+    def print_doclist(self):
+        i = 1
+        k = len(self.doc_list)
+        for doc in self.doc_list:
+            print(f"Document {i} / {k}")
+            print(f"Document for class: {doc.label}")
+            print(f"Document Length: {doc.doc_len}")
+            print(f"Document Vector: {doc.vec}")
+            i+=1
                                 
     def count_files(self):
         for label in self.labels:
