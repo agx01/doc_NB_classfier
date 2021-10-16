@@ -29,7 +29,10 @@ class GlobalDict:
     
     def add_file_vec(self, vec):
         self.global_dict.append(vec)
-        
+    
+    def get_file_vec(self):
+        return self.file_vec_list
+    
     def build_dataframe(self):
         df = pd.DataFrame(columns=self.global_dict)
         for file_vec in self.file_vec_list:
@@ -222,8 +225,8 @@ class DocClassifier:
         if os.path.exists('processed_data.csv'):
             df = pd.read_csv('processed_data.csv')
         else:
-            preprocessor = Preprocessor()
             k=0
+            preprocessor = Preprocessor()
             df = pd.DataFrame()
             for label in self.labels:
                 for file in os.listdir(f"{self.path}\{label}"):
@@ -231,15 +234,17 @@ class DocClassifier:
                     content, vec = preprocessor.preprocessing(file_path)
                     vec['category_class'] = label
                     new_df = pd.DataFrame(vec, index=[0])
-                    df = pd.concat([df,new_df], axis=0, ignore_index=True)
+                    preprocessor.global_dict.add_file_vec(vec)
+                    #df = pd.concat([df,new_df], axis=0, ignore_index=True)
                     k+=1
                     print(f"Document {k} processed for class {label}")
             print(f"Total Documents processed: {k}")
-            print(df.head())
+            print(preprocessor.global_dict.get_file_vec())
+            #print(df.head())
             #self.count_files()
             #df = pd.DataFrame(self.file_per_class, columns = self.file_per_class.keys(), index=[0])
-            df = df.fillna(0)
-            df.to_csv('processed_data.csv')
+            #df = df.fillna(0)
+            #df.to_csv('processed_data.csv')
         print(df)
                                 
     def count_files(self):
