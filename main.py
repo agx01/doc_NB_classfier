@@ -54,8 +54,10 @@ class Document:
         #Iterate over each word in the vector for the document
         for word in self.vec.keys():
             #Calculate probability of each word in a class
-            prob = self.vec[word]/global_dict.get_label_wordcount(self.label)
-            self.prob_list.append[word] = prob
+            word_freq = self.vec[word]
+            total_words_label = global_dict.get_label_wordcount(self.label)
+            prob = word_freq/total_words_label
+            self.prob_list[word] = prob
     
     def read_file(self, file_path):
         """
@@ -229,7 +231,7 @@ class DocClassifier:
         
         
 if __name__ == "__main__":
-    doc_class = DocClassifier()
+    doc_class = DocClassifier(train_test_split=0.1)
     #doc_class.print_filenames()
     #doc_class.prepare_data()
     doc_class.Classify()
