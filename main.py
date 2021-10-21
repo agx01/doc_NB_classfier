@@ -8,17 +8,29 @@ import os
 import re
 import string
 from nltk.corpus import stopwords
-import pandas as pd
+from sklearn import metrics
+import numpy as np
 
 class GlobalDict:
     
     def __init__(self, labels):
-        self.global_dict = []
-        self.stop_words = set(stopwords.words('english'))
+        self.stop_words = stopwords.words('english')
+        self.stop_words.append('aa')
+        self.stop_words.append('aaa')
+        self.stop_words.append('aaaahhh')
+        self.stop_words.append('aab')
+        self.stop_words.append('aachen')
+        self.stop_words.append('xref')
         self.words_per_class = {}
+        self.class_vec_list = {}
+        self.prob_list = {}
         for label in labels:
             self.words_per_class[label] = 0
+            self.class_vec_list[label] = {}
+            self.prob_list = {}
         self.total_words = 0
+        self.alpha = 1
+        #self.word_freq_per_class = {}
     
     def __enter__(self):
         return self
@@ -27,37 +39,44 @@ class GlobalDict:
         del self.global_dict
         del self.file_vec_list
         
-    def add_word2dict(self, word, label):
-        if word not in self.global_dict:
-            self.global_dict.append(word)
-        self.increase_words_per_class(label)
+    def add_word2dict(self, doc_vec, label):
+        class_vec = self.class_vec_list[label]
+        for word in doc_vec.keys():
+            if word not in class_vec.keys():
+                class_vec[word] = doc_vec[word]
+            else:
+                class_vec[word] += doc_vec[word]
+        self.class_vec_list[label] = class_vec
+
+    def calculate_words_per_class(self, labels):
+        for label in labels:
+            class_vec = self.class_vec_list[label]
+            for word in class_vec:
+                self.words_per_class[label] += class_vec[word]
     
-    def increase_words_per_class(self, label):
-            self.words_per_class[label] += 1
-            #increase the total words list
-            self.total_words += 1
-    
-    def get_file_vec(self):
-        return self.file_vec_list   
+    def get_class_vec(self):
+        return self.class_vec_list   
 
     def get_label_wordcount(self, label):
         return self.words_per_class[label]
     
+    def calculate_prob(self, labels, alpha = 0, n = 1):
+        self.calculate_words_per_class(labels)
+        for label in labels:
+            class_vec = self.class_vec_list[label]
+            prob_vec = {}
+            for word in class_vec:
+                prob = (class_vec[word]+alpha)/(self.words_per_class[label]+n*alpha)
+                prob_vec[word] = prob
+            self.prob_list[label] = prob_vec
+        
 class Document:
     
     def __init__(self, label, file_path, global_dict):
         self.label = label
         self.vec, self.doc_len = self.preprocessing(file_path, global_dict)
-        self.prob_list = {}
-        
-    def calculate_prob(self, global_dict):
-        #Iterate over each word in the vector for the document
-        for word in self.vec.keys():
-            #Calculate probability of each word in a class
-            word_freq = self.vec[word]
-            total_words_label = global_dict.get_label_wordcount(self.label)
-            prob = word_freq/total_words_label
-            self.prob_list[word] = prob
+        #self.prob_list = {}
+    
     
     def read_file(self, file_path):
         """
@@ -139,22 +158,24 @@ class Document:
         
         #Remove all numbers
         content = re.sub(r'[0-9]+', '', content)
+        
+        #Remove all the single letters
+        content = re.sub(r'(?:^| )\w(?:$| )', '', content).strip()
                 
         #Remove stopwords
         content = self.remove_stop_words(content, global_dict.stop_words)
         
         #Creating the vector for each document
-        vec = self.create_doc_vector(content, global_dict)
+        vec = self.create_doc_vector(content)
         
         doc_length = len(vec)
         
         return vec, doc_length
     
-    def create_doc_vector(self, content, global_dict):
+    def create_doc_vector(self, content):
         word_list = [word for word in str(content).split()]
         vec = {}
         for word in word_list:
-            global_dict.add_word2dict(word, self.label)
             if word in vec.keys():
                 vec[word] = vec[word] + 1
             else:
@@ -167,23 +188,144 @@ class DocClassifier:
     def __init__(self, train_test_split=0.5):
         self.labels = [x for x in os.listdir("data/20_newsgroups")]
         self.path = "data\\20_newsgroups\\"
-        self.doc_list = []
         self.global_dict = GlobalDict(self.labels)
         self.prior_list = {}
         self.train_test_split = train_test_split
+        self.file_per_class = {}
+        
+    def get_accuracy(self):
+        Y_act = []
+        Y_pred = []
+        Y_log_pred = []
+        k = 0
+        for label in self.labels:
+            file_list = os.listdir(f"{self.path}\{label}")
+            i = int(len(file_list)*self.train_test_split) + 1
+            file_list = file_list[i:]
+            for file in file_list:
+                print(f"Testing on Document: {k}")
+                file_path = f"{self.path}\{label}\{file}"
+                doc = Document(label, file_path, self.global_dict)
+                Y_act.append(label)
+                Y_pred.append(self.predict(doc.vec))
+                Y_log_pred.append(self.predict_with_log(doc.vec))
+                k+=1
+        print("Accuracy of the algorithm on the existing dataset is:")
+        print(str(metrics.accuracy_score(y_true=Y_act, y_pred=Y_pred)*100)+"%")
+        print("Accuracy of the algorithm using log in the existing data is :")
+        print(str(metrics.accuracy_score(y_true=Y_act, y_pred=Y_log_pred)*100)+"%")
+        
+    def get_multiNBaccuracy(self):
+        Y_act = []
+        Y_pred = []
+        k = 0
+        for label in self.labels:
+            file_list = os.listdir(f"{self.path}\{label}")
+            i = int(len(file_list)*self.train_test_split) + 1
+            file_list = file_list[i:]
+            for file in file_list:
+                print(f"Testing on Document: {k}")
+                file_path = f"{self.path}\{label}\{file}"
+                doc = Document(label, file_path, self.global_dict)
+                Y_act.append(label)
+                Y_pred.append(self.multinomial_NB_predict(doc.vec))
+                k+=1
+        print("Accuracy of the algorithm on the existing dataset is:")
+        print(str(metrics.accuracy_score(y_true=Y_act, y_pred=Y_pred)*100)+"%")
     
-    def fit(self):
-        for doc in self.doc_list:
-            doc.calculate_prob()
-
+    def multinomial_NB_predict(self, doc_vec):
+        word_prob_list = {}
+        n_list = []
+        missing_word_freq = {}
+        for label in self.labels:
+            n = 0
+            for word in doc_vec:
+                class_prob_list = self.global_dict.prob_list[label]
+                if word not in class_prob_list:
+                    n += 1
+                    if word in missing_word_freq.keys():
+                        missing_word_freq[word] += 1
+                    else:
+                        missing_word_freq[word] = 1
+                    n_list.append(n)
+        
+        i = 0
+        for label in self.labels:
+            prior = self.prior_list[label]
+            prob = 1
+            self.global_dict.calculate_prob(labels = self.labels, n = n_list[i], alpha = self.global_dict.alpha)
+            for word in doc_vec:
+                class_prob_list = self.global_dict.prob_list[label]
+                if word in class_prob_list:
+                    prob *= np.log(pow(class_prob_list[word], doc_vec[word]))
+                else:
+                    prob *= np.log(pow((missing_word_freq[word]/self.global_dict.words_per_class[label]), doc_vec[word]))
+            
+            prob *= prior
+            word_prob_list[label] = prob
+        Y_pred = max(word_prob_list, key=word_prob_list.get)
+        return Y_pred
     
+    
+    def predict_with_log(self, doc_vec):
+        word_prob_list = {}
+        for label in self.labels:
+            prior = self.prior_list[label]
+            prob = 1
+            for word in doc_vec:
+                class_prob_list = self.global_dict.prob_list[label]
+                if word in class_prob_list:
+                    prob *= np.log(pow(class_prob_list[word], doc_vec[word]))
+            prob *= prior
+            word_prob_list[label] = prob
+        Y_pred = max(word_prob_list, key=word_prob_list.get)
+        return Y_pred
+    
+    def predict(self, doc_vec):
+        word_prob_list = {}
+        for label in self.labels:
+            prior = self.prior_list[label]
+            prob = 1
+            for word in doc_vec:
+                class_prob_list = self.global_dict.prob_list[label]
+                if word in class_prob_list:
+                    prob *= pow(class_prob_list[word], doc_vec[word])
+            prob *= prior
+            word_prob_list[label] = prob
+        Y_pred = max(word_prob_list, key=word_prob_list.get)
+        return Y_pred
+        
+    def test_predict(self, label):
+        file_list = os.listdir(f"{self.path}\{label}")
+        files_num = len(file_list)
+        i = int(files_num*self.train_test_split) + 1
+        file = file_list[i]
+        file_path = f"{self.path}\{label}\{file}"
+        test_doc = Document(label, file_path, self.global_dict)
+        word_prob_list = {}
+        doc_vec = test_doc.vec
+        for label in self.labels:
+            prior = self.prior_list[label]
+            prob = 1
+            for word in doc_vec:
+                class_prob_list = self.global_dict.prob_list[label]
+                if word in class_prob_list:
+                    prob *= class_prob_list[word]
+            prob *= prior
+            word_prob_list[label] = prob
+        for key in word_prob_list.keys():
+            print(f"{key}:{word_prob_list[key]}")
+        
+        print("Predicted Class is:")
+        print(max(word_prob_list, key=word_prob_list.get))
+        
     def calculate_prior(self, total_records):
         for label in self.labels:
             file_num = len(os.listdir(f"{self.path}\{label}"))
             prior_label = (file_num*self.train_test_split)/total_records
             self.prior_list[label] = prior_label
         
-    def Classify(self):
+    def fit(self):
         k=0
         for label in self.labels:
             j = 0
@@ -191,28 +333,16 @@ class DocClassifier:
             for file in os.listdir(f"{self.path}\{label}"):
                 file_path = f"{self.path}\{label}\{file}"
                 doc = Document(label, file_path, self.global_dict)
-                self.doc_list.append(doc)
+                #self.doc_list.append(doc)
+                self.global_dict.add_word2dict(doc.vec, label)
                 j += 1
                 if j == int(files_num*self.train_test_split):
                     break
                 k+=1
                 print(f"Document {k} processed for class {label}")
         self.calculate_prior(k)
-        print(f"Total Documents processed: {k}")
-        print(f"Priors calculated: {self.prior_list}")
+        self.global_dict.calculate_prob(labels=self.labels)
         
-        print("Calculate probability of each word in every doc")
-        for doc in self.doc_list:
-            doc.calculate_prob(self.global_dict)
-    
-    def print_prob_doc(self):
-        i = 1
-        k = len(self.doc_list)
-        for doc in self.doc_list:
-            print(f"Document {i} / {k}")
-            print(f"Document probabilities: {doc.prob_list}")
-            i+=1
-            
     def print_doclist(self):
         i = 1
         k = len(self.doc_list)
@@ -227,11 +357,22 @@ class DocClassifier:
         for label in self.labels:
             file_list = os.listdir(f"{self.path}\{label}")
             self.file_per_class[label] = len(file_list)
-        print(self.file_per_class)
+            print(f"{label}:{len(file_list)}")
         
         
 if __name__ == "__main__":
-    doc_class = DocClassifier(train_test_split=0.1)
-    #doc_class.print_filenames()
-    #doc_class.prepare_data()
-    doc_class.Classify()
+    doc_class = DocClassifier(train_test_split=0.5)
+    doc_class.count_files()
+    doc_class.fit()
+    doc_class.get_accuracy()
+    #doc_class.count_files()
+    #doc_class.get_multiNBaccuracy()
+    """
+    i = 0
+    print("Please select a label class to test function on:")
+    for label in doc_class.labels:
+        print(f"{i}. {label}")
+        i += 1
+    selection = int(input("Selection:"))
+    doc_class.test_predict(doc_class.labels[selection])
+    """
